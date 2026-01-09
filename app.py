@@ -6,57 +6,73 @@ import statistics
 
 st.set_page_config(page_title="Baby Period Tracker🩸", page_icon="🩸")
 
-st.title("🩸 Baby Period Tracker")
-
-# Connect to the Sheet using the URL you provided
-# We use 'gsheets' connection which looks for secrets
+# 1. Setup Connection
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# Read existing data
-df = conn.read(ttl=0) # ttl=0 ensures it doesn't cache old data
+# 2. Fetch History (ttl=0 ensures we always get the latest logs)
+df = conn.read(ttl=0)
+
+st.title("🩸 Period Predictor & Logger")
 
 if not df.empty:
-    # This 'mixed' format handles both 13/03/2025 and 13-03-2025 automatically
+    # Clean data: Standardize headers and convert dates
+    df.columns = [str(c).strip() for c in df.columns]
     df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
+    df = df.dropna(subset=['Date']).sort_values(by='Date')
     
-    # Remove any rows that couldn't be read as dates
-    df = df.dropna(subset=['Date'])
-    
-    dates = sorted(df['Date'].tolist())
+    all_dates = df['Date'].tolist()
 
-    if len(dates) >= 2:
-        # Calculate Cycle Math
-        cycle_lengths = [(dates[i] - dates[i-1]).days for i in range(1, len(dates))]
-        avg_cycle = statistics.mean(cycle_lengths)
-        std_dev = statistics.stdev(cycle_lengths) if len(cycle_lengths) > 1 else 2
+    if len(all_dates) >= 2:
+        # Calculate gaps between every period in your history
+        cycle_gaps = [(all_dates[i] - all_dates[i-1]).days for i in range(1, len(all_dates))]
         
-        last_start = dates[-1]
-        next_start = last_start + timedelta(days=round(avg_cycle - std_dev))
-        next_end = last_start + timedelta(days=round(avg_cycle + std_dev))
+        # Filter out unrealistic gaps (e.g., typing errors where gap < 15 days)
+        valid_gaps = [g for g in cycle_gaps if g > 15]
+        
+        if valid_gaps:
+            avg_cycle = statistics.mean(valid_gaps)
+            variation = statistics.stdev(valid_gaps) if len(valid_gaps) > 1 else 2
+            
+            # Predict based on the MOST RECENT date in the sheet
+            last_date = all_dates[-1]
+            pred_start = last_date + timedelta(days=round(avg_cycle - variation))
+            pred_end = last_start = last_date + timedelta(days=round(avg_cycle + variation))
 
-        # Metrics display
-        col1, col2 = st.columns(2)
-        col1.metric("Avg Cycle", f"{round(avg_cycle, 1)} days")
-        col2.metric("Last Period", last_start.strftime('%d-%m-%Y'))
+            # UI Display
+            st.subheader("Next Predicted Cycle")
+            st.info(f"Based on your history, your next period is expected between:")
+            st.header(f"📅 {pred_start.strftime('%d %b')} – {pred_end.strftime('%d %b %Y')}")
+            
+            col1, col2 = st.columns(2)
+            col1.metric("Average Cycle", f"{round(avg_cycle, 1)} days")
+            col2.metric("Last Logged", last_date.strftime('%d %b %Y'))
 
-        st.success(f"### 🎯 Predicted: **{next_start.strftime('%d %b')}** — **{next_end.strftime('%d %b %Y')}**")
-
-# Input for new dates
+# 3. Logging Section
 st.divider()
-st.subheader("Add New Entry")
-new_date_input = st.date_input("When did it start?", value=datetime.now())
+st.subheader("Log Actual Start Date")
+st.write("When your period starts, select the date below to update the predictor:")
 
-if st.button("Save to Google Sheets"):
-    new_date_str = new_date_input.strftime("%d/%m/%Y")
-    new_row = pd.DataFrame([{"Date": new_date_str}])
-    updated_df = pd.concat([df, new_row], ignore_index=True)
+new_date = st.date_input("Start Date", value=datetime.now())
+
+if st.button("Log Date & Update Sheet"):
+    # Prepare the data to be saved
+    new_entry = pd.DataFrame([{"Date": new_date.strftime("%d/%m/%Y")}])
     
-    # This will now work because of the Service Account!
+    # Combine old data with the new entry
+    # We use a simple DataFrame format to ensure it matches your sheet's column 'Date'
+    updated_df = pd.concat([df[['Date']], new_entry], ignore_index=True)
+    
+    # Convert back to string format for Google Sheets storage
+    updated_df['Date'] = pd.to_datetime(updated_df['Date']).dt.strftime("%d/%m/%Y")
+    
+    # Write to Google Sheets
     conn.update(data=updated_df)
     
-    st.cache_data.clear() # This forces the app to re-read the sheet
-    st.success("Successfully updated!")
+    # Reset app to show new prediction
+    st.cache_data.clear()
+    st.success(f"Logged {new_date.strftime('%d %b %Y')}! Recalculating...")
     st.rerun()
 
-st.subheader("History Log")
-st.dataframe(df.sort_values(by="Date", ascending=False), use_container_width=True)
+# 4. History View (Collapsible)
+with st.expander("View Full History"):
+    st.table(df.sort_values(by='Date', ascending=False)['Date'].dt.strftime('%d-%m-%Y'))
