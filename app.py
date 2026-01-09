@@ -16,8 +16,12 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 df = conn.read(ttl=0) # ttl=0 ensures it doesn't cache old data
 
 if not df.empty:
-    # Convert your DD-MM-YYYY format to datetime
-    df['Date'] = pd.to_datetime(df['Date'], dayfirst=True)
+    # This 'mixed' format handles both 13/03/2025 and 13-03-2025 automatically
+    df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
+    
+    # Remove any rows that couldn't be read as dates
+    df = df.dropna(subset=['Date'])
+    
     dates = sorted(df['Date'].tolist())
 
     if len(dates) >= 2:
