@@ -47,15 +47,14 @@ st.subheader("Add New Entry")
 new_date_input = st.date_input("When did it start?", value=datetime.now())
 
 if st.button("Save to Google Sheets"):
-    new_date_str = new_date_input.strftime("%d-%m-%Y")
-    
-    # Create new row
+    new_date_str = new_date_input.strftime("%d/%m/%Y")
     new_row = pd.DataFrame([{"Date": new_date_str}])
     updated_df = pd.concat([df, new_row], ignore_index=True)
     
-    # Write back to Sheet
+    # This will now work because of the Service Account!
     conn.update(data=updated_df)
-    st.cache_data.clear()
+    
+    st.cache_data.clear() # This forces the app to re-read the sheet
     st.success("Successfully updated!")
     st.rerun()
 
