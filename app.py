@@ -41,7 +41,7 @@ if not df.empty:
             # UI Display
             st.subheader("Next Predicted Cycle")
             st.info(f"Based on your history, your next period is expected between:")
-            st.header(f"📅 {pred_start.strftime('%d %b')} – {pred_end.strftime('%d %b %Y')}")
+            st.header(f"⏳ {pred_start.strftime('%d %b')} – {pred_end.strftime('%d %b %Y')}")
             
             col1, col2 = st.columns(2)
             col1.metric("Average Cycle", f"{round(avg_cycle, 1)} days")
