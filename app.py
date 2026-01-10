@@ -13,7 +13,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # 3. Fetch and Clean Data
 df = conn.read(ttl=0)
 
-st.title("🩸 Baby Period Tracker 🩸")
+st.title("🩸Baby Period Tracker🩸")
 
 # Ensure DataFrame is usable and standardized
 if not df.empty:
