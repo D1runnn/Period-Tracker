@@ -56,7 +56,7 @@ if not df.empty:
             reliability = "High" if std_dev < 3 else "Moderate" if std_dev < 5 else "Variable"
             st.markdown(f"Status: **{reliability} Reliability**")
             
-            st.success(f"### 📅 {pred_start.strftime('%d %b')} – {pred_end.strftime('%d %b %Y')}")
+            st.success(f"### ⏳ {pred_start.strftime('%d %b')} – {pred_end.strftime('%d %b %Y')}")
             
             col1, col2, col3 = st.columns(3)
             col1.metric("Avg Cycle", f"{round(avg_cycle, 1)} days")
