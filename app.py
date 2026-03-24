@@ -1,3 +1,4 @@
+
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
@@ -5,48 +6,57 @@ from datetime import datetime, timedelta
 import numpy as np
 import plotly.express as px
 
-# --- 1. PRO THEMING & UTILITIES ---
-st.set_page_config(page_title="Luna Pro | Period & Fertility", page_icon="🩸", layout="wide")
+# --- 1. THEME-AWARE PRO CSS ---
+st.set_page_config(page_title="Luna Pro", page_icon="🩸", layout="wide")
 
-def local_css():
+def apply_pro_theme():
     st.markdown("""
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-        html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+        /* Modern Typography */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
         
-        /* Main Card Styling */
+        /* Universal App Styling */
+        .stApp { font-family: 'Inter', sans-serif; }
+        
+        /* Glassmorphic Status Card - Works in Light & Dark */
         .status-card {
-            padding: 30px;
-            border-radius: 20px;
-            color: white;
-            margin-bottom: 25px;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+            border-radius: 24px;
+            margin-bottom: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            color: white !important;
         }
-        
-        /* Metric Box Styling */
+
+        /* Metric Box Theme-Aware Borders */
         div[data-testid="stMetric"] {
-            background-color: #ffffff;
-            border: 1px solid #f0f2f6;
-            padding: 15px 20px;
-            border-radius: 12px;
+            background-color: rgba(128, 128, 128, 0.05) !important;
+            border: 1px solid rgba(128, 128, 128, 0.2) !important;
+            padding: 1.5rem !important;
+            border-radius: 16px !important;
+        }
+
+        /* Tabs Styling */
+        .stTabs [data-baseweb="tab-list"] { gap: 8px; }
+        .stTabs [data-baseweb="tab"] {
+            border-radius: 8px 8px 0 0;
+            padding: 10px 24px;
+            font-weight: 500;
         }
         
-        /* Clean Tabs */
-        .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-        .stTabs [data-baseweb="tab"] {
-            background-color: #f8f9fa;
-            border-radius: 8px 8px 0 0;
-            padding: 10px 20px;
-        }
+        /* Subheader refinement */
+        .stMarkdown h3 { font-weight: 700; letter-spacing: -0.5px; }
         </style>
     """, unsafe_allow_html=True)
 
-local_css()
+apply_pro_theme()
 
-# --- 2. DATA ENGINE ---
+# --- 2. DATA PIPELINE ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-def get_data():
+def load_clean_data():
     df = conn.read(ttl=0)
     if df is not None and not df.empty:
         df.columns = [str(c).strip() for c in df.columns]
@@ -54,10 +64,11 @@ def get_data():
         return df.dropna(subset=['Date']).sort_values(by='Date')
     return pd.DataFrame(columns=['Date'])
 
-df = get_data()
+df = load_clean_data()
 
-# --- 3. LOGIC & CALCULATIONS ---
-avg_cycle = 28.0  # Default
+# --- 3. ANALYTICS ENGINE ---
+# Default fallback values
+avg_cycle = 28.0
 variation = 0.0
 days_since_start = 0
 today = datetime.now().date()
@@ -65,95 +76,102 @@ today = datetime.now().date()
 if len(df) >= 2:
     all_dates = df['Date'].tolist()
     gaps = [(all_dates[i] - all_dates[i-1]).days for i in range(1, len(all_dates))]
-    avg_cycle = np.mean(gaps[-5:]) # Weighted to last 5 cycles
+    # Use moving average of last 3 cycles for better accuracy
+    avg_cycle = np.mean(gaps[-3:]) if len(gaps) >= 3 else np.mean(gaps)
     variation = np.std(gaps)
     last_date = all_dates[-1].date()
     days_since_start = (today - last_date).days
 
-# --- 4. PROFESSIONAL DASHBOARD ---
-st.title("🩸 Luna Health Dashboard")
-st.caption(f"Last sync: {datetime.now().strftime('%H:%M:%S')} | Data Source: Google Sheets")
+# --- 4. EXECUTIVE DASHBOARD ---
+st.title("🩸 Biological Insights")
+st.caption(f"Sync Status: Live | Medical Prediction Engine v2.1")
 
-# Dynamic Header Card
-if len(df) >= 1:
-    # Phase Determination
+# Professional Status Logic
+if not df.empty:
+    # Color Gradients selected for readability in both modes
     if days_since_start < 5:
-        phase, color, icon = "Menstrual Phase", "linear-gradient(135deg, #ff4b4b, #ff7676)", "🩸"
+        phase, color, icon, msg = "Menstrual", "#E63946", "🩸", "Physiological Reset"
     elif days_since_start < 13:
-        phase, color, icon = "Follicular Phase", "linear-gradient(135deg, #00b09b, #96c93d)", "🌱"
+        phase, color, icon, msg = "Follicular", "#2A9D8F", "🌱", "Follicle Maturation"
     elif days_since_start < 17:
-        phase, color, icon = "Ovulation Window", "linear-gradient(135deg, #6a11cb, #2575fc)", "🥚"
+        phase, color, icon, msg = "Ovulatory", "#4361EE", "🥚", "Peak Fertility Window"
     else:
-        phase, color, icon = "Luteal Phase", "linear-gradient(135deg, #f093fb, #f5576c)", "🌙"
+        phase, color, icon, msg = "Luteal", "#F4A261", "🌙", "Progesterone Dominance"
 
+    # The Card uses a subtle gradient with the specific phase color
     st.markdown(f"""
-        <div class="status-card" style="background: {color};">
-            <h3 style="margin:0; opacity: 0.9;">Current Status</h3>
-            <h1 style="margin:10px 0; font-size: 2.5rem;">{icon} {phase}</h1>
-            <p style="margin:0; font-weight: 600;">Day {days_since_start + 1} of your cycle</p>
+        <div class="status-card" style="background: linear-gradient(135deg, {color}CC, {color});">
+            <p style="margin:0; text-transform: uppercase; letter-spacing: 1px; font-size: 0.8rem; opacity: 0.8;">Current Biological Phase</p>
+            <h1 style="margin:5px 0 15px 0; font-size: 2.8rem;">{icon} {phase}</h1>
+            <div style="display: flex; gap: 20px; align-items: center;">
+                <span style="background: rgba(255,255,255,0.2); padding: 5px 15px; border-radius: 20px; font-weight: 600;">Day {days_since_start + 1}</span>
+                <span style="opacity: 0.9;">{msg}</span>
+            </div>
         </div>
     """, unsafe_allow_html=True)
 
-# Main KPIs
-c1, c2, c3, c4 = st.columns(4)
-next_start = (df['Date'].max() + timedelta(days=round(avg_cycle))).date() if not df.empty else today
-days_to_go = (next_start - today).days
+# Key Performance Indicators
+m1, m2, m3, m4 = st.columns(4)
+next_period = (df['Date'].max() + timedelta(days=round(avg_cycle))).date() if not df.empty else today
+countdown = (next_period - today).days
 
-with c1: st.metric("Next Period", next_start.strftime("%b %d"), f"{days_to_go} days left")
-with c2: st.metric("Avg Cycle Length", f"{round(avg_cycle)} Days")
-with c3: st.metric("Cycle Variation", f"±{round(variation, 1)}d")
-with c4: 
-    ov_date = next_start - timedelta(days=14)
-    st.metric("Est. Ovulation", ov_date.strftime("%b %d"))
+with m1: st.metric("Predicted Start", next_period.strftime("%b %d"), f"{countdown} days")
+with m2: st.metric("Average Cycle", f"{round(avg_cycle, 1)}d")
+with m3: st.metric("Cycle Variance", f"±{round(variation, 1)}d")
+with m4: 
+    # Reliability Score calculation
+    score = "High" if variation < 2.5 else "Moderate" if variation < 4.5 else "Low"
+    st.metric("Data Reliability", score)
 
-st.divider()
+st.write("---")
 
-# --- 5. INTERACTIVE SECTIONS ---
-tab_plan, tab_history, tab_log = st.tabs(["📅 Planning & Fertility", "📊 Trends & Analysis", "✍️ Log Entry"])
+# --- 5. FUNCTIONAL TABS ---
+tab1, tab2, tab3 = st.tabs(["📊 Analytics", "📅 Clinical Forecast", "📝 Action"])
 
-with tab_plan:
-    st.subheader("Your Next 3 Months")
-    p1, p2, p3 = st.columns(3)
-    p_cols = [p1, p2, p3]
-    curr = next_start
-    for i in range(3):
-        with p_cols[i]:
-            st.markdown(f"**Cycle {i+1}**")
-            st.info(f"Starts: {curr.strftime('%d %B %Y')}")
-            st.caption(f"Fertile window starts: {(curr - timedelta(days=16)).strftime('%b %d')}")
-        curr += timedelta(days=round(avg_cycle))
-
-with tab_history:
+with tab1:
     if len(df) > 1:
-        fig = px.line(df, x=df.index, y=gaps + [None], markers=True, 
-                      title="Cycle Length History", labels={'y':'Days', 'index':'Cycle #'})
-        fig.update_traces(line_color='#ff4b4b', line_width=3)
+        # Theme-aware Charting
+        chart_df = pd.DataFrame({"Cycle": range(1, len(gaps)+1), "Days": gaps})
+        fig = px.area(chart_df, x="Cycle", y="Days", title="Historical Cycle Consistency")
+        fig.update_traces(line_color="#4361EE", fillcolor="rgba(67, 97, 238, 0.2)")
+        fig.update_layout(xaxis_title="Past Cycles", yaxis_title="Duration (Days)", template="none")
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("Insufficient data to plot trends.")
+        st.info("Historical trends will appear after your second logged entry.")
 
-with tab_log:
-    with st.form("log_form"):
-        new_date = st.date_input("When did your last period start?", today)
-        submitted = st.form_submit_button("Confirm & Sync to Cloud", use_container_width=True)
-        
-        if submitted:
-            if not df.empty and (pd.to_datetime(new_date) - df['Date'].max()).days < 10:
-                st.warning("⚠️ This entry is very close to your last one. Are you sure?")
-            
-            new_row = pd.DataFrame([{"Date": new_date.strftime("%d/%m/%Y")}])
-            updated_df = pd.concat([df[['Date']], new_row], ignore_index=True)
-            updated_df['Date'] = pd.to_datetime(updated_df['Date']).dt.strftime("%d/%m/%Y")
-            
-            conn.update(data=updated_df)
-            st.cache_data.clear()
-            st.success("Successfully updated!")
-            st.rerun()
+with tab2:
+    st.subheader("Quarterly Outlook")
+    st.write("Predicted start dates for the next three cycles:")
+    c_a, c_b, c_c = st.columns(3)
+    forecast = [c_a, c_b, c_c]
+    future_date = next_period
+    for i in range(3):
+        with forecast[i]:
+            st.markdown(f"**Cycle +{i+1}**")
+            st.code(future_date.strftime("%A\n%d %B, %Y"))
+        future_date += timedelta(days=round(avg_cycle))
 
-# --- 6. FOOTER MGMT ---
-with st.expander("Advanced Data Management"):
-    st.write("Current Records:")
-    st.dataframe(df.sort_values(by='Date', ascending=False), use_container_width=True)
-    if st.button("Delete Last Log Entry"):
-        # Logic for deletion...
-        pass
+with tab3:
+    col_l, col_r = st.columns([2, 1])
+    with col_l:
+        with st.form("log_entry", clear_on_submit=True):
+            st.write("#### Add Clinical Data")
+            log_date = st.date_input("Period Start Date", today)
+            if st.form_submit_button("Submit Entry to Cloud", use_container_width=True):
+                # Data formatting & Sync
+                new_data = pd.DataFrame([{"Date": log_date.strftime("%d/%m/%Y")}])
+                updated = pd.concat([df[['Date']], new_data], ignore_index=True)
+                updated['Date'] = pd.to_datetime(updated['Date']).dt.strftime("%d/%m/%Y")
+                
+                conn.update(data=updated)
+                st.cache_data.clear()
+                st.rerun()
+    with col_r:
+        st.write("#### Quick Actions")
+        if st.button("🗑️ Remove Last Log"):
+            # Logic to drop last row and sync
+            pass
+
+# --- 6. HISTORY LOG ---
+with st.expander("Detailed Log History"):
+    st.dataframe(df.sort_values(by='Date', ascending=False), use_container_width=True, hide_index=True)
