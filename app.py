@@ -1,10 +1,10 @@
-
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime, timedelta
 import numpy as np
 import plotly.graph_objects as go
+import plotly.express as px
 
 # --- 1. PRO-LEVEL THEME CONFIG ---
 st.set_page_config(page_title="Baby Period Tracker", page_icon="🩸", layout="wide")
@@ -14,35 +14,36 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
     .stApp { font-family: 'Inter', sans-serif; }
     
-    .status-card {
-        padding: 2rem;
-        border-radius: 20px;
-        margin-bottom: 2rem;
-        color: white !important;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-    }
-    
-    .probability-badge {
-        background: rgba(255,255,255,0.2);
-        padding: 4px 12px;
-        border-radius: 50px;
-        font-size: 0.85rem;
-        font-weight: 600;
+    /* Subtle container styling */
+    div[data-testid="stMetric"] {
+        background-color: #f8f9fa !important;
+        border: 1px solid #e9ecef !important;
+        padding: 1.5rem !important;
+        border-radius: 16px !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02) !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # --- 2. DATA PIPELINE ---
 conn = st.connection("gsheets", type=GSheetsConnection)
-df = conn.read(ttl=0)
 
-if not df.empty:
-    df.columns = [str(c).strip() for c in df.columns]
-    df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
-    df = df.dropna(subset=['Date']).sort_values(by='Date')
+@st.cache_data(ttl=60)
+def get_data():
+    df = conn.read(ttl=0)
+    if df is not None and not df.empty:
+        df.columns = [str(c).strip() for c in df.columns]
+        df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
+        return df.dropna(subset=['Date']).sort_values(by='Date')
+    return pd.DataFrame(columns=['Date'])
 
-# --- 3. ADVANCED PREDICTION ENGINE ---
+df = get_data()
+
+# --- 3. CORE ENGINE ---
 today = datetime.now().date()
+
+st.title("🩸 Baby Period Tracker")
+st.caption("Clinical Menstrual Health & Fertility Visualization")
 
 if len(df) >= 3:
     all_dates = df['Date'].tolist()
@@ -51,83 +52,112 @@ if len(df) >= 3:
     avg_cycle = np.mean(gaps)
     std_dev = np.std(gaps)
     last_start = all_dates[-1].date()
-    
-    # Prediction Windows
-    pred_start_min = last_start + timedelta(days=round(avg_cycle - std_dev))
-    pred_start_avg = last_start + timedelta(days=round(avg_cycle))
-    pred_start_max = last_start + timedelta(days=round(avg_cycle + std_dev))
-    
-    # Fertility Logic (The Clinical Curve)
-    ovulation_est = pred_start_avg - timedelta(days=14)
-    peak_start = ovulation_est - timedelta(days=2)
-    peak_end = ovulation_est + timedelta(days=1)
-    
-    # Current Phase Logic
     days_since = (today - last_start).days
     
-    # Probability Logic
-    is_fertile = peak_start <= today <= peak_end
-    prob_status = "🔴 Low" if not is_fertile else "🟣 PEAK"
-    if (ovulation_est - timedelta(days=5)) <= today < peak_start:
-        prob_status = "🟡 High"
-
-    # --- UI: HEADER ---
-    st.title("🩸 Baby Period Tracker")
+    pred_start = last_start + timedelta(days=round(avg_cycle))
+    ovulation_est = pred_start - timedelta(days=14)
     
-    # Dynamic Dashboard Card
-    phase_colors = {
-        "Menstrual": "#E63946", "Follicular": "#2A9D8F", 
-        "Ovulatory": "#4361EE", "Luteal": "#F4A261"
-    }
+    # --- VISUALIZATION 1: THE CYCLE WHEEL ---
+    st.subheader("Your Current Cycle")
     
-    if days_since < 5: phase = "Menstrual"
-    elif days_since < 13: phase = "Follicular"
-    elif days_since < 17: phase = "Ovulatory"
-    else: phase = "Luteal"
+    # Calculate proportional days for the chart
+    mens_days = 5
+    foll_days = max(ovulation_est - last_start - timedelta(days=7), timedelta(days=1)).days
+    fert_days = 6 # 5 days before + ovulation day
+    lut_days = max(round(avg_cycle) - mens_days - foll_days - fert_days, 10)
     
-    st.markdown(f"""
-        <div class="status-card" style="background: {phase_colors[phase]};">
-            <h4 style="margin:0; opacity:0.8;">CURRENT STATUS</h4>
-            <h1 style="margin:10px 0;">{phase} Phase (Day {days_since + 1})</h1>
-            <div style="display:flex; gap:15px;">
-                <span class="probability-badge">Conception Probability: {prob_status}</span>
-                <span class="probability-badge">Cycle Stability: {"±" + str(round(std_dev,1)) + "d"}</span>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-
-    # --- UI: PREDICTION TABS ---
-    t1, t2, t3 = st.tabs(["🎯 Precision Forecast", "📈 Statistical Ranges", "✍️ Log"])
-
-    with t1:
-        st.subheader("Upcoming Milestones")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.metric("Next Period (Expected)", pred_start_avg.strftime("%d %b"))
-            st.caption(f"Window: {pred_start_min.strftime('%d %b')} - {pred_start_max.strftime('%d %b')}")
-        with c2:
-            st.metric("Ovulation Day", ovulation_est.strftime("%d %b"))
-            st.caption("Most likely date for egg release")
-        with c3:
-            days_to_ov = (ovulation_est - today).days
-            st.metric("Days to Ovulation", f"{days_to_ov}d" if days_to_ov >=0 else "Passed")
-
-    with t2:
-        st.subheader("Historical Consistency")
-        # Probability Range Visualizer
-        fig = go.Figure()
-        fig.add_trace(go.Box(x=gaps, name="Cycle Length", boxpoints='all', marker_color='#4361EE'))
-        fig.update_layout(title="Variation in Cycle Durations (Days)", template="none")
-        st.plotly_chart(fig, use_container_width=True)
+    phases = ['Menstrual', 'Follicular', 'Fertile Window', 'Luteal']
+    durations = [mens_days, foll_days, fert_days, lut_days]
+    colors = ['#E63946', '#2A9D8F', '#4361EE', '#F4A261']
+    
+    col_wheel, col_metrics = st.columns([1.5, 1])
+    
+    with col_wheel:
+        fig_wheel = go.Figure(data=[go.Pie(
+            labels=phases, 
+            values=durations, 
+            hole=0.75,
+            marker_colors=colors,
+            textinfo='label',
+            textposition='outside',
+            hoverinfo='label+value',
+            direction='clockwise',
+            sort=False
+        )])
         
-        st.write(f"**Clinical Insight:** Your cycles range from **{min(gaps)}** to **{max(gaps)}** days. "
-                 f"The most frequent duration is **{round(avg_cycle)}** days.")
+        # Add center text for current day
+        fig_wheel.update_layout(
+            annotations=[dict(text=f"Day<br>{days_since + 1}", x=0.5, y=0.5, font_size=36, showarrow=False)],
+            showlegend=False,
+            margin=dict(t=20, b=20, l=20, r=20),
+            height=350
+        )
+        st.plotly_chart(fig_wheel, use_container_width=True)
 
-    with t3:
-        with st.form("log_period"):
-            log_date = st.date_input("Start Date", today)
-            if st.form_submit_button("Sync to Google Sheets"):
-                # Standard update logic here
+    with col_metrics:
+        # --- VISUALIZATION 2: FERTILITY GAUGE ---
+        days_to_ov = (ovulation_est - today).days
+        prob_score = 10 if days_to_ov in [0, 1] else (8 if 2 <= days_to_ov <= 5 else 2)
+        
+        fig_gauge = go.Figure(go.Indicator(
+            mode = "gauge",
+            value = prob_score,
+            title = {'text': "Conception Probability", 'font': {'size': 18}},
+            gauge = {
+                'axis': {'range': [0, 10], 'visible': False},
+                'bar': {'color': "#4361EE" if prob_score > 5 else "#d3d3d3"},
+                'steps': [
+                    {'range': [0, 4], 'color': "#f8f9fa"},
+                    {'range': [4, 8], 'color': "#e9ecef"},
+                    {'range': [8, 10], 'color': "#dee2e6"}
+                ],
+            }
+        ))
+        fig_gauge.update_layout(height=200, margin=dict(t=40, b=10, l=20, r=20))
+        st.plotly_chart(fig_gauge, use_container_width=True)
+        
+        # Quick summary metrics underneath
+        st.metric("Next Period", pred_start.strftime("%d %B"), f"±{round(std_dev)} days")
+        st.metric("Expected Ovulation", ovulation_est.strftime("%d %B"))
+
+    st.divider()
+
+    # --- VISUALIZATION 3: CYCLE HISTORY BAR CHART ---
+    tab_history, tab_forecast, tab_log = st.tabs(["📊 Cycle Variance", "📅 Forecast", "✍️ Log Entry"])
+    
+    with tab_history:
+        st.write("#### Historical Cycle Durations")
+        # Color bars based on whether they fall inside the "normal" range
+        bar_colors = ["#2A9D8F" if (avg_cycle - 3) <= gap <= (avg_cycle + 3) else "#E63946" for gap in gaps]
+        
+        fig_bar = go.Figure(data=[go.Bar(
+            x=[f"Cycle {i+1}" for i in range(len(gaps))],
+            y=gaps,
+            marker_color=bar_colors,
+            text=gaps,
+            textposition='auto'
+        )])
+        
+        # Add a horizontal line for the average
+        fig_bar.add_hline(y=avg_cycle, line_dash="dot", line_color="#333", annotation_text="Your Average")
+        fig_bar.update_layout(yaxis_title="Days", template="none", height=300)
+        st.plotly_chart(fig_bar, use_container_width=True)
+        st.caption("🟢 Normal Range | 🔴 High Variance (Outlier)")
+
+    with tab_forecast:
+        st.write("#### 90-Day Biological Outlook")
+        f1, f2, f3 = st.columns(3)
+        future_ptr = pred_start
+        for i, col in enumerate([f1, f2, f3]):
+            with col:
+                st.success(f"**Cycle +{i+1}:** {future_ptr.strftime('%d %B %Y')}")
+                st.caption(f"Fertile Window starts ~{(future_ptr - timedelta(days=19)).strftime('%d %b')}")
+            future_ptr += timedelta(days=round(avg_cycle))
+
+    with tab_log:
+        with st.form("log_period", clear_on_submit=True):
+            log_date = st.date_input("Start Date of Last Period", today)
+            if st.form_submit_button("Securely Sync Data", use_container_width=True):
                 new_row = pd.DataFrame([{"Date": log_date.strftime("%d/%m/%Y")}])
                 updated_df = pd.concat([df[['Date']], new_row], ignore_index=True)
                 updated_df['Date'] = pd.to_datetime(updated_df['Date']).dt.strftime("%d/%m/%Y")
@@ -136,10 +166,23 @@ if len(df) >= 3:
                 st.rerun()
 
 else:
-    st.title("🩸 Baby Period Tracker")
-    st.info("Please log at least 3 historical dates to unlock probability windows and statistical modeling.")
-    # Simple logging form for new users
+    st.info("Log at least 3 cycle start dates to generate the Clinical Visualizations.")
     with st.form("initial_log"):
         d = st.date_input("Period Start Date", today)
-        if st.form_submit_button("Initialize Tracker"):
-            pass # Add sync logic
+        if st.form_submit_button("Log Date"):
+            new_row = pd.DataFrame([{"Date": d.strftime("%d/%m/%Y")}])
+            updated_df = pd.concat([df[['Date']], new_row], ignore_index=True) if not df.empty else new_row
+            updated_df['Date'] = pd.to_datetime(updated_df['Date']).dt.strftime("%d/%m/%Y")
+            conn.update(data=updated_df)
+            st.cache_data.clear()
+            st.rerun()
+
+with st.expander("Raw Data Management"):
+    if not df.empty:
+        st.dataframe(df.sort_values(by='Date', ascending=False), use_container_width=True, hide_index=True)
+        if st.button("Delete Most Recent Entry"):
+            updated_df = df.iloc[:-1]
+            updated_df['Date'] = updated_df['Date'].dt.strftime("%d/%m/%Y")
+            conn.update(data=updated_df)
+            st.cache_data.clear()
+            st.rerun()
