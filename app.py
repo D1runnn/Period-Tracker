@@ -13,10 +13,8 @@ st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     
-    /* Global Typography */
     .stApp { font-family: 'Inter', sans-serif; }
     
-    /* Theme-Aware Metric Cards */
     div[data-testid="stMetric"] {
         background-color: var(--secondary-background-color);
         border: 1px solid rgba(128, 128, 128, 0.2);
@@ -29,13 +27,12 @@ st.markdown("""
         transform: translateY(-2px);
     }
 
-    /* Theme-Aware Status Card */
     .status-card {
         padding: 2rem;
         border-radius: 16px;
         background-color: var(--secondary-background-color);
         border: 1px solid rgba(128, 128, 128, 0.2);
-        border-left: 8px solid; /* Color applied dynamically inline */
+        border-left: 8px solid;
         margin-bottom: 2rem;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
     }
@@ -55,13 +52,15 @@ st.markdown("""
 # --- 2. DATA PIPELINE ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=10) # Reduced TTL for faster updates
 def get_data():
     try:
+        # Read data and force date parsing strictly as DD/MM/YYYY
         df = conn.read(ttl=0)
         if df is not None and not df.empty:
             df.columns = [str(c).strip() for c in df.columns]
-            df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
+            # Crucial: Specify format and dayfirst to prevent MM/DD flipping
+            df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, format='%d/%m/%Y', errors='coerce')
             return df.dropna(subset=['Date']).sort_values(by='Date')
     except Exception as e:
         st.error(f"Database connection error: {e}")
@@ -72,7 +71,6 @@ df = get_data()
 # --- 3. ANALYTICS ENGINE ---
 today = datetime.now().date()
 
-# Header
 st.title("🩸 Baby Period Tracker")
 st.caption("Clinical Menstrual Health & Fertility Dashboard")
 
@@ -93,8 +91,6 @@ if len(df) >= 3:
     peak_fertility_start = ovulation_est - timedelta(days=2)
     peak_fertility_end = ovulation_est + timedelta(days=1)
     
-    # --- PHASE LOGIC & ACCENT COLORS ---
-    # We use these colors for accents, borders, and charts (they look good in both modes)
     if days_since < 5:
         phase, color, msg = "Menstrual Phase", "#FF4B4B", "Rest and recover."
     elif days_since < 13:
@@ -104,7 +100,6 @@ if len(df) >= 3:
     else:
         phase, color, msg = "Luteal Phase", "#FFA15A", "Progesterone dominant."
 
-    # Conception Probability
     days_to_ov = (ovulation_est - today).days
     if peak_fertility_start <= today <= peak_fertility_end:
         prob_status, prob_icon = "Peak", "🌟"
@@ -113,7 +108,6 @@ if len(df) >= 3:
     else:
         prob_status, prob_icon = "Low", "📉"
 
-    # --- MAIN STATUS CARD ---
     st.markdown(f"""
         <div class="status-card" style="border-left-color: {color};">
             <h4 style="margin-top: 0; margin-bottom: 0.5rem; color: var(--text-color); opacity: 0.7; font-weight: 500;">CURRENT BIOLOGICAL STATUS</h4>
@@ -127,7 +121,6 @@ if len(df) >= 3:
         </div>
     """, unsafe_allow_html=True)
 
-    # --- TOP METRICS ---
     m1, m2, m3, m4 = st.columns(4)
     with m1:
         st.metric("Next Period", pred_start_avg.strftime("%b %d"), f"{(pred_start_avg - today).days} days away")
@@ -140,17 +133,13 @@ if len(df) >= 3:
 
     st.write("---")
 
-    # --- DATA VISUALIZATION TABS ---
     tab_overview, tab_history, tab_log = st.tabs(["🔄 Cycle Overview", "📊 Historical Trends", "✍️ Log Data"])
 
     with tab_overview:
         col_chart, col_forecast = st.columns([1.5, 1])
-        
         with col_chart:
-            # Theme-aware Donut Chart
-            mens_days = 5
+            mens_days, fert_days = 5, 6
             foll_days = max((ovulation_est - last_start).days - 5, 1)
-            fert_days = 6
             lut_days = max(round(avg_cycle) - mens_days - foll_days - fert_days, 1)
             
             fig_wheel = go.Figure(data=[go.Pie(
@@ -158,19 +147,10 @@ if len(df) >= 3:
                 values=[mens_days, foll_days, fert_days, lut_days], 
                 hole=0.7,
                 marker_colors=['#FF4B4B', '#00CC96', '#636EFA', '#FFA15A'],
-                textinfo='none', # Cleaner look
+                textinfo='none',
                 hoverinfo='label+value'
             )])
-            
-            fig_wheel.update_layout(
-                title="Current Cycle Distribution",
-                showlegend=True,
-                margin=dict(t=40, b=0, l=0, r=0),
-                height=350,
-                paper_bgcolor="rgba(0,0,0,0)", # Makes background transparent
-                plot_bgcolor="rgba(0,0,0,0)"
-            )
-            # theme="streamlit" ensures font colors match light/dark mode
+            fig_wheel.update_layout(showlegend=True, margin=dict(t=40, b=0, l=0, r=0), height=350, paper_bgcolor="rgba(0,0,0,0)")
             st.plotly_chart(fig_wheel, use_container_width=True, theme="streamlit")
 
         with col_forecast:
@@ -181,27 +161,11 @@ if len(df) >= 3:
 
     with tab_history:
         st.write("#### Cycle Variance Analysis")
-        # Theme-aware Bar Chart
         colors = ["#00CC96" if (avg_cycle - std_dev) <= g <= (avg_cycle + std_dev) else "#FF4B4B" for g in gaps]
-        
-        fig_bar = go.Figure(data=[go.Bar(
-            x=[f"Cycle {i+1}" for i in range(len(gaps))],
-            y=gaps,
-            marker_color=colors,
-            text=gaps,
-            textposition='auto'
-        )])
-        
+        fig_bar = go.Figure(data=[go.Bar(x=[f"Cycle {i+1}" for i in range(len(gaps))], y=gaps, marker_color=colors, text=gaps, textposition='auto')])
         fig_bar.add_hline(y=avg_cycle, line_dash="dash", line_color="#888", annotation_text="Average")
-        fig_bar.update_layout(
-            yaxis_title="Duration (Days)",
-            margin=dict(t=20, b=20, l=20, r=20),
-            height=350,
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)"
-        )
+        fig_bar.update_layout(yaxis_title="Duration (Days)", height=350, paper_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
-        st.caption("🟢 Within Normal Variance | 🔴 High Variance (Outlier)")
 
     with tab_log:
         col_form, col_manage = st.columns([2, 1])
@@ -210,9 +174,12 @@ if len(df) >= 3:
                 st.write("#### Log New Cycle Start")
                 log_date = st.date_input("Start Date", today)
                 if st.form_submit_button("Save to Google Sheets", use_container_width=True):
+                    # Create new row and ensure all dates are converted to strings in the same format
                     new_row = pd.DataFrame([{"Date": log_date.strftime("%d/%m/%Y")}])
-                    updated_df = pd.concat([df[['Date']], new_row], ignore_index=True)
-                    updated_df['Date'] = pd.to_datetime(updated_df['Date']).dt.strftime("%d/%m/%Y")
+                    current_dates = df[['Date']].copy()
+                    current_dates['Date'] = current_dates['Date'].dt.strftime("%d/%m/%Y")
+                    updated_df = pd.concat([current_dates, new_row], ignore_index=True)
+                    
                     conn.update(data=updated_df)
                     st.cache_data.clear()
                     st.rerun()
@@ -220,23 +187,21 @@ if len(df) >= 3:
         with col_manage:
             st.write("#### Data Management")
             if st.button("🗑️ Undo Last Log", use_container_width=True):
-                updated_df = df.iloc[:-1]
-                updated_df['Date'] = updated_df['Date'].dt.strftime("%d/%m/%Y")
-                conn.update(data=updated_df)
-                st.cache_data.clear()
-                st.rerun()
+                if not df.empty:
+                    updated_df = df.iloc[:-1].copy()
+                    updated_df['Date'] = updated_df['Date'].dt.strftime("%d/%m/%Y")
+                    conn.update(data=updated_df)
+                    st.cache_data.clear()
+                    st.rerun()
             with st.expander("View Raw Data"):
                 st.dataframe(df.sort_values(by='Date', ascending=False), hide_index=True, use_container_width=True)
 
 else:
-    # Onboarding State
-    st.info("👋 Welcome! Please log at least 3 previous cycle start dates to activate the predictive engine and visualizations.")
+    st.info("👋 Welcome! Please log at least 3 previous cycle start dates.")
     with st.form("initial_log"):
         d = st.date_input("Period Start Date", today)
         if st.form_submit_button("Log Initial Date"):
             new_row = pd.DataFrame([{"Date": d.strftime("%d/%m/%Y")}])
-            updated_df = pd.concat([df[['Date']], new_row], ignore_index=True) if not df.empty else new_row
-            updated_df['Date'] = pd.to_datetime(updated_df['Date']).dt.strftime("%d/%m/%Y")
-            conn.update(data=updated_df)
+            conn.update(data=new_row)
             st.cache_data.clear()
             st.rerun()
